@@ -8,7 +8,7 @@ hierarchical browser. Every path is just a node with content and children.
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from db import get_db_client
-from db.sqlite_client import Path as PathModel
+from db.sqlite_client import Path as PathModel, Edge as EdgeModel, ROOT_NODE_UUID
 from sqlalchemy import select
 
 router = APIRouter(prefix="/browse", tags=["browse"])
@@ -63,10 +63,14 @@ async def get_node(
             "content": "",
             "priority": 0,
             "disclosure": None,
-            "created_at": None
+            "created_at": None,
+            "node_uuid": ROOT_NODE_UUID,
         }
-        # Get roots as children (no memory_id = virtual root)
-        children_raw = await client.get_children(None, domain=domain)
+        children_raw = await client.get_children(
+            ROOT_NODE_UUID,
+            context_domain=domain,
+            context_path=path,
+        )
         breadcrumbs = [{"path": "", "label": "root"}]
     else:
         # Get the node itself
@@ -75,8 +79,11 @@ async def get_node(
         if not memory:
             raise HTTPException(status_code=404, detail=f"Path not found: {domain}://{path}")
         
-        # Get children across all aliases of this memory
-        children_raw = await client.get_children(memory["id"])
+        children_raw = await client.get_children(
+            memory["node_uuid"],
+            context_domain=domain,
+            context_path=path,
+        )
         
         # Build breadcrumbs
         segments = path.split("/")
@@ -97,21 +104,24 @@ async def get_node(
             "content_snippet": c["content_snippet"]
         }
         for c in children_raw
+        if c["domain"] == domain
     ]
     children.sort(key=lambda x: (x["priority"] if x["priority"] is not None else 999, x["path"]))
     
-    # Get all aliases (other paths pointing to the same memory)
+    # Get all aliases (other paths pointing to the same node)
     aliases = []
-    if path and memory.get("id"):
+    if path and memory.get("node_uuid"):
         async with client.session() as session:
             result = await session.execute(
                 select(PathModel.domain, PathModel.path)
-                .where(PathModel.memory_id == memory["id"])
+                .select_from(PathModel)
+                .join(EdgeModel, PathModel.edge_id == EdgeModel.id)
+                .where(EdgeModel.child_uuid == memory["node_uuid"])
             )
             aliases = [
                 f"{row[0]}://{row[1]}"
                 for row in result.all()
-                if not (row[0] == domain and row[1] == path)  # exclude current
+                if not (row[0] == domain and row[1] == path)
             ]
     
     return {

@@ -7,10 +7,10 @@ router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 @router.get("/orphans")
 async def get_orphans():
     """
-    Get all orphan memories (both deprecated and truly orphaned).
+    Get all orphan memories (all have deprecated=True).
     
-    - deprecated: old versions created by update_memory (has migrated_to)
-    - orphaned: non-deprecated memories with no paths pointing to them
+    - deprecated: old versions created by update_memory (migrated_to is set)
+    - orphaned: node lost all paths, auto-deprecated (migrated_to is NULL)
     
     Includes migration target paths for deprecated memories so the human can see
     where the memory used to live without clicking into each one.
@@ -38,14 +38,11 @@ async def delete_orphan(memory_id: int):
     Permanently delete an orphan memory.
     This action is irreversible. Repairs the version chain if applicable.
     
-    Safety: The orphan check (deprecated or path-less) and the deletion
-    run inside the same DB transaction, eliminating TOCTOU races.
+    Safety: requires deprecated=True; active memories are never deleted.
     """
     client = get_db_client()
     try:
-        result = await client.permanently_delete_memory(
-            memory_id, require_orphan=True
-        )
+        result = await client.permanently_delete_memory(memory_id)
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
