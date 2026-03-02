@@ -208,6 +208,7 @@ async def _fetch_and_format_memory(client, uri: str) -> str:
     lines.append("")
     lines.append(f"MEMORY: {disp_uri}")
     lines.append(f"Memory ID: {memory.get('id')}")
+    lines.append(f"Other Aliases: {memory.get('alias_count', 0)}")
     lines.append(f"Priority: {memory.get('priority', 0)}")
 
     disclosure = memory.get("disclosure")
@@ -373,7 +374,7 @@ async def _generate_memory_index_view(domain_filter: Optional[str] = None) -> st
                     uri = primary.get("uri", make_uri(domain_name, primary["path"]))
                     priority = primary.get("priority", 0)
                     memory_id = primary.get("memory_id", "?")
-                    imp_str = f" [★{priority}]" if priority > 0 else ""
+                    imp_str = f" [★{priority}]"
                     lines.append(f"  - {uri} [#{memory_id}]{imp_str}")
                 lines.append("")
 

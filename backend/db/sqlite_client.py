@@ -346,6 +346,11 @@ class SQLiteClient:
                 return None
 
             memory, edge, path_obj = row
+
+            # Count total paths (aliases) for this node
+            total_paths = await self._count_incoming_paths(session, edge.child_uuid)
+            alias_count = max(0, total_paths - 1)
+
             return {
                 "id": memory.id,
                 "node_uuid": edge.child_uuid,
@@ -358,6 +363,7 @@ class SQLiteClient:
                 else None,
                 "domain": path_obj.domain,
                 "path": path_obj.path,
+                "alias_count": alias_count,
             }
 
     async def get_memory_by_node_uuid(
