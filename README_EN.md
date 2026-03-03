@@ -398,6 +398,18 @@ Writing new memories is eating; organizing old memories is digesting. Periodical
 
 ---
 
+### 🔄 Version Upgrades & Database Migration
+
+When you update Nocturne Memory to a new version via `git pull`, the database schema may change.
+
+**You don't need to do anything manually.** Migrations run automatically when the MCP server starts:
+
+1. When an MCP client (Cursor, Claude, etc.) connects to Nocturne Memory, the system automatically detects any pending migration scripts.
+2. **For SQLite users**, the system automatically backs up your database file **before** applying migrations (e.g., `your_db.db.20260303_143000.bak`).
+3. A confirmation message is logged once all migrations complete.
+
+> Backup files are saved in the same directory as your database file. If anything goes wrong, you can rename the `.bak` file back to the original filename to restore.
+
 <details>
 <summary><strong>🔄 Migrating from Pre-1.0 (Neo4j) to v1.0 (SQLite)</strong></summary>
 

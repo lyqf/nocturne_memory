@@ -34,28 +34,49 @@ async def run_migrations(engine: AsyncEngine):
             
     migration_files.sort()
 
-    for file in migration_files:
-        version = file.split("_", 1)[0]
-        if file not in applied_versions:
-            logger.info(f"Applying migration: {file}")
-            
-            # Dynamically import the migration module
-            safe_stem = file[:-3].replace(".", "_")
-            module_name = f"backend.db.migrations.{safe_stem}"
-            spec = importlib.util.spec_from_file_location(module_name, os.path.join(migrations_dir, file))
-            module = importlib.util.module_from_spec(spec)
-            module.__package__ = "backend.db.migrations"
-            spec.loader.exec_module(module)
-            
-            # Execute the migration
-            if hasattr(module, 'up'):
-                await module.up(engine)
-            else:
-                logger.warning(f"Warning: {file} has no 'up' async function.")
+    pending_migrations = [f for f in migration_files if f not in applied_versions]
 
-            # Record the migration
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text("INSERT INTO schema_migrations (version) VALUES (:version)"),
-                    {"version": file}
-                )
+    if not pending_migrations:
+        return
+
+    # Backup SQLite database before migration
+    if str(engine.url).startswith("sqlite"):
+        db_path = engine.url.database
+        if db_path and db_path != ":memory:" and os.path.exists(db_path):
+            import shutil
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"{db_path}.{timestamp}.bak"
+            logger.info(f"Pending migrations detected. Backing up SQLite database to {backup_path}")
+            try:
+                shutil.copy2(db_path, backup_path)
+            except Exception as e:
+                logger.error(f"Failed to backup database: {e}. Aborting migration.")
+                raise RuntimeError(f"Database backup failed: {e}") from e
+
+    for file in pending_migrations:
+        logger.info(f"Applying migration: {file}")
+        
+        # Dynamically import the migration module
+        safe_stem = file[:-3].replace(".", "_")
+        module_name = f"backend.db.migrations.{safe_stem}"
+        spec = importlib.util.spec_from_file_location(module_name, os.path.join(migrations_dir, file))
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = "backend.db.migrations"
+        spec.loader.exec_module(module)
+        
+        # Execute the migration
+        if hasattr(module, 'up'):
+            await module.up(engine)
+        else:
+            logger.warning(f"Warning: {file} has no 'up' async function.")
+
+        # Record the migration
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("INSERT INTO schema_migrations (version) VALUES (:version)"),
+                {"version": file}
+            )
+
+    logger.info("Successfully applied all pending migrations.")
+
